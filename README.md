@@ -1,7 +1,7 @@
 # Scraper Marchés Publics Maroc (PRADO)
 
 Scraper modulaire pour extraire les annonces du site `marchespublics.gov.ma`, gérer la pagination PRADO et stocker dans MongoDB.
-Includes a small Flask API to query the saved announcements.
+Will Include a Flask API to query the saved announcements.
 
 ---
 
@@ -26,7 +26,7 @@ pip install requests lxml pymongo flask bson
 
 ---
 ## Installation
-1. Clone/copy files into a directory on your VM.
+1. After cloning the repo.
 2. Install dependencies:
 ```bash
 pip install requests lxml pymongo flask bson
@@ -38,7 +38,7 @@ sudo systemctl start mongod
 ## Usage
 ### Run scraper (one-shot / limited pages)
 ```bash
-python3 main.py 5 # to scrape 5 pages
+python3 main.py 5 # to scrape 5 pages for testing
 ```
 To force start from page 1, remove `state.json` or run:
 ```bash
@@ -51,7 +51,14 @@ Run scraper continuously (cron / systemd)
 ```
 `main.py` saves progress to `state.json`, so subsequent runs resume.
 
+---
+
 # API
+
+> [!Warning]
+> Not Yet Imlimented
+>
+
 ## Start API
 ```bash
 python3 api.py
