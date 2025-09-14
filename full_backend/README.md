@@ -348,4 +348,3 @@ curl "https://yourdomain.com/api/v1/announcements/?search=infrastructure&limit=1
 curl "https://yourdomain.com/api/v1/announcements/?procedure=AO&acheteur_public=Ministry"
 ```
 
-This completes the production-ready backend for your Moroccan public markets scraper!
