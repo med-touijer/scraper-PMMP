@@ -132,7 +132,7 @@ def extract_announcement(row):
             # remove "Objet :" label if present
             txt = re.sub(r'^\s*Objet\s*:?\s*', '', txt, flags=re.IGNORECASE).strip()
             if txt:
-                ann["objet"] = " ".join(txt.split())
+                ann["objet"] = " ".join(txt.split()).split("...")[0].strip()
         else:
             # fallback: find a <strong> that contains "Objet" and take its parent text_content
             strongs = cell_intitule[0].xpath('.//strong[contains(translate(.,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"objet")]')
@@ -142,7 +142,7 @@ def extract_announcement(row):
                     txt = parent.text_content()
                     txt = re.sub(r'^\s*Objet\s*:?\s*', '', txt, flags=re.IGNORECASE).strip()
                     if txt:
-                        ann["objet"] = " ".join(txt.split())
+                        ann["objet"] = " ".join(txt.split()).split("...")[0].strip()  
 
     # ACHETEUR PUBLIC
     ann["acheteurPublic"] = "N/A"
@@ -166,10 +166,50 @@ def extract_announcement(row):
     # LOTS
     ann["lots"] = "-"
     if cell_lieu:
-        s = cell_lieu[0].xpath('.//span[1]/text()')
-        if s:
-            candidate = s[0].strip()
-            ann["lots"] = candidate if candidate else "-"
+        lot_link_pattern = re.compile(r"popUp\('([^']+)", re.IGNORECASE)
+
+        # xpath returns a list; grab the first href if present
+        hrefs = cell_lieu[0].xpath('.//a[contains(@href,"popUp")]/@href')
+        href = hrefs[0] if hrefs else None
+
+        if href:
+            # If it's a javascript popUp(...) wrapper, extract inside string
+            m = lot_link_pattern.search(href)
+            if m:
+                relative = m.group(1)  # e.g. index.php?page=commun.PopUpDetailLots&...
+                # normalize and build full url
+                # if relative already looks like an absolute URL, keep it
+                if relative.startswith("http://") or relative.startswith("https://"):
+                    ann["lots"] = relative
+                else:
+                    ann["lots"] = "https://www.marchespublics.gov.ma/" + relative.lstrip("/")
+            else:
+                # Not a popUp wrapper — it might already be a normal href string.
+                # If it's a javascript:... but not matched, keep a safe fallback:
+                if href.startswith("javascript:"):
+                    # try to remove the wrapper crudly if no popUp matched
+                    # attempt to extract the first quoted string inside javascript(...)
+                    fallback = re.search(r"['\"]([^'\"]+)['\"]", href)
+                    ann["lots"] = "https://www.marchespublics.gov.ma/" + fallback.group(1).lstrip("/") if fallback else href
+                else:
+                    # normal href (could be relative or absolute)
+                    if href.startswith("http://") or href.startswith("https://"):
+                        ann["lots"] = href
+                    else:
+                        ann["lots"] = "https://www.marchespublics.gov.ma/" + href.lstrip("/")
+    else:
+        ann["lots"] = "-"
+    # if cell_lieu:
+    #     #s = cell_lieu[0].xpath('.//span[1]/text()')
+    #     lot_link_pattern = re.compile(r"popUp\('([^']+)", re.IGNORECASE)
+    #     llnkpttrn = lot_link_pattern.search(    )
+    #     if llnkpttrn:
+    #         ann["lots"] = "https://www.marchespublics.gov.ma/" + llnkpttrn.group(1)
+    #     else:
+    #         ann["lots"] = cell_lieu[0].xpath('.//a[contains(@href,"popUp")]/@href') or "-"
+    #     # if s:
+    #     #     candidate = s[0].strip()
+    #     #     ann["lots"] = cell_lieu[0].xpath('.//a[contains(@href,"popUp")]/@href') #candidate if candidate else "-"
 
     # LIEU D'EXECUTION: prefer direct child text of the panelBlocLieuxExec (avoid nested info-bubble duplication)
     ann["lieuExecution"] = "N/A"
@@ -210,14 +250,40 @@ def extract_announcement(row):
     # LIEN DE CONSULTATION
     link = ""
     if cell_lieu:
-        link_candidates = cell_lieu[0].xpath('.//a[contains(@href,"popUp")]/@href')
+        link_candidates = cell_lieu[0].xpath('.//a[contains(@href,"entreprise.EntrepriseDetailsConsultation&refConsultation")]/@href')
         if link_candidates:
             link = link_candidates[0]
     if not link:
-        alt = row.xpath('.//a[contains(@href,"refConsultation")]/@href')
+        alt = row.xpath('.//a[contains(@href,"entreprise.EntrepriseDetailsConsultation&refConsultation")]/@href')
         if alt:
             link = alt[0]
     ann["lienDeConsultation"] = normalize_popup_link(link)
+
+    # Reference Consultation
+    # ex: www.marchespublics.gov.ma/index.php?page=commun.PopUpDetailLots&orgAccronyme=q9t&refConsultation=912553&lang=
+    if link or cell_lieu[0].xpath('.//a[contains(@href,"popUp")]/@href'):
+        try: 
+            ann["refConsultation"] = int(link.split("refConsultation=")[1].split("&")[0])
+        except Exception:
+            ann["refConsultation"] = "N/A"
+    # ORG ACRONYME
+    # ex: www.marchespublics.gov.ma/index.php?page=commun.PopUpDetailLots&orgAccronyme=q9t&refConsultation=912553&lang=
+    orgacro_pattern = re.compile(r"orgAcronyme=([^&'\" ]+)", re.IGNORECASE)
+    orgacro_match01 = orgacro_pattern.search(link)
+    orgacro_match02 = orgacro_pattern.search(ann["lienDeConsultation"])
+
+    if orgacro_match01:
+        ann["orgAcronyme"] = orgacro_match01.group(1)
+    elif orgacro_match02:
+        ann["orgAcronyme"] = orgacro_match02.group(1)
+    else:
+        ann["orgAcronyme"] = "N/A"
+
+    # if link or cell_lieu[0].xpath('.//a[contains(@href,"popUp")]/@href'):
+    #     try: 
+    #         ann["orgAcronyme"] = link.split("&")[-1].split("=")[1]
+    #     except Exception:
+    #         ann["orgAcronyme"] = link.spli
 
     # Ensure keys exist and default values
     defaults = {
@@ -232,7 +298,9 @@ def extract_announcement(row):
         "dateLimite": None,
         "piecesJointes": [],
         "lienDeConsultation": "N/A",
-    }
+        "refConsultation":"N/A",
+        "orgAcronyme":"N/A",
+    }   
     for k, v in defaults.items():
         if k not in ann or ann[k] is None:
             ann[k] = v
